@@ -1,58 +1,54 @@
-(defun c:DevZLabelBase ( / ss i ent pt zfact baseZ dev textPt txt textHeight sign)
-  ;; Ввод базовой высоты (проектной отметки)
+(defun c:DevZLabelByPoints ( / baseZ ss i ent entObj pt zfact dev txt sign
+                              textHeight textPt acadApp doc ms objText)
+  ;; Запрос базовой высоты
   (setq baseZ (getreal "\nВведите базовую высоту (проектную отметку): "))
-
-  (if (null baseZ)
-    (progn
-      (prompt "\n❌ Неверный ввод.")
-      (exit)
-    )
+  (if (not baseZ)
+    (progn (prompt "\n❌ Ошибка: не введена высота.") (exit))
   )
 
-  ;; Выбор блоков (крестов)
-  (prompt "\nВыберите блоки-точки (кресты): ")
-  (setq ss (ssget '((0 . "INSERT"))))
+  ;; Выбор точек
+  (prompt "\nВыберите объекты-точки: ")
+  (setq ss (ssget '((0 . "POINT"))))
+  (if (not ss)
+    (progn (prompt "\n⚠️ Точки не выбраны.") (exit))
+  )
 
-  ;; Высота текста
+  ;; Настройки
   (setq textHeight 1.5)
+  (setq acadApp (vlax-get-acad-object))
+  (setq doc (vla-get-ActiveDocument acadApp))
+  (setq ms (vla-get-ModelSpace doc))
 
-  (if ss
-    (progn
-      (setq i 0)
-      (while (< i (sslength ss))
-        (setq ent (ssname ss i))
-        (setq pt (cdr (assoc 10 (entget ent)))) ; точка вставки
-        (setq zfact (caddr pt)) ; Фактическая высота
+  ;; Перебор точек
+  (setq i 0)
+  (while (< i (sslength ss))
+    (setq ent (ssname ss i))
+    (setq entObj (vlax-ename->vla-object ent))
+    (setq pt (vlax-get entObj 'Coordinates))
 
-        ;; Вычисление отклонения
-        (setq dev (- zfact baseZ))
+    ;; z-фактическая
+    (setq zfact (caddr pt))
 
-        ;; Форматирование текста с +/-
-        (setq sign (if (>= dev 0) "+" "-"))
-        (setq txt (strcat sign (rtos (abs dev) 2 3) " м"))
+    ;; вычисление отклонения
+    (setq dev (- zfact baseZ))
 
-        ;; Координата для текста чуть выше блока (+0.2 по Z)
-        (setq textPt (list (car pt) (cadr pt) (+ zfact 0.2)))
+    ;; формат текста
+    (setq sign (if (>= dev 0) "+" "-"))
+    (setq txt (strcat sign (rtos (abs dev) 2 3) " м"))
 
-        ;; Создание текста
-        (entmakex
-          (list
-            (cons 0 "TEXT")
-            (cons 10 textPt)
-            (cons 40 textHeight)
-            (cons 1 txt)
-            (cons 7 "Standard") ; стиль текста
-            (cons 8 "Отклонения") ; слой (создай или поменяй)
-            (cons 50 0.0)
-            (cons 72 1) ; центрирование
-            (cons 73 0)
-          )
-        )
+    ;; точка размещения текста над исходной точкой
+    (setq textPt (vlax-3d-point (list (car pt) (cadr pt) (+ zfact 0.2))))
 
-        (setq i (1+ i))
-      )
-    )
-    (prompt "\n⚠️ Блоки не выбраны.")
+    ;; создаём текст
+    (setq objText (vla-AddText ms txt textPt textHeight))
+    (vla-put-HorizontalMode objText acTextHorzCenter)
+    (vla-put-VerticalMode objText acTextVertBaseline)
+    (vla-put-Alignment objText acAlignmentMiddleCenter)
+    (vla-put-TextAlignmentPoint objText textPt)
+
+    (setq i (1+ i))
   )
+
+  (prompt (strcat "\n✅ Готово. Созданы отметки по " (itoa (sslength ss)) " точкам."))
   (princ)
 )
